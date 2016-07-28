@@ -2,17 +2,15 @@ package com.twinblade.gpmexport;
 
 import android.Manifest;
 import android.content.pm.PackageManager;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
 import android.os.Environment;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.util.Log;
 
-import org.xmlpull.v1.XmlPullParser;
-import org.xmlpull.v1.XmlPullParserFactory;
-
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.util.ArrayList;
 
@@ -54,7 +52,8 @@ public class Main extends AppCompatActivity {
     }
 
     private void findUnlistedSongs() throws Exception {
-        FileOutputStream fos = new FileOutputStream(new File(Environment.getExternalStorageDirectory(), "unlisted.xml"));
+        FileOutputStream fos = new FileOutputStream(new File(Environment.getExternalStorageDirectory(), "unlisted.csv"));
+        fos.write("Artist,Title\n".getBytes());
 
         int listedCount = 0;
         int unlistedCount = 0;
@@ -68,17 +67,14 @@ public class Main extends AppCompatActivity {
                 }
             }
 
-            if (!listed) {
-                if (!song.mArtist.equals("Stuff You Should Know")) {
+            if (!listed && !song.mArtist.equals("Stuff You Should Know")) {
+                String title = song.mTitle;
+                // Log.e("GPME", title);
 
-                    String title = song.mTitle;
-                    Log.e("GPME", title);
+                String line = title + "," + song.mArtist + "\n";
+                fos.write(line.getBytes());
 
-                    String line = title + " - " + song.mArtist + "\n";
-                    fos.write(line.getBytes());
-
-                    unlistedCount++;
-                }
+                unlistedCount++;
             }
         }
 
@@ -89,7 +85,8 @@ public class Main extends AppCompatActivity {
     }
 
     private void findListedSongs(String listId) throws Exception {
-        FileOutputStream fos = new FileOutputStream(new File(Environment.getExternalStorageDirectory(), "k" + listId + ".xml"));
+        FileOutputStream fos = new FileOutputStream(new File(Environment.getExternalStorageDirectory(), "pl" + listId + ".csv"));
+        fos.write("Artist,Title\n".getBytes());
 
         int count = 0;
         for (ListItem item : mListItems) {
@@ -97,9 +94,9 @@ public class Main extends AppCompatActivity {
                 for (Song song : mSongs) {
                     if (song.mId.equals(item.mSongId)) {
                         String title = song.mTitle;
-                        Log.e("GPME", title);
+                        // Log.e("GPME", title);
 
-                        String line = title + " - " + song.mArtist + "\n";
+                        String line = title + "," + song.mArtist + "\n";
                         fos.write(line.getBytes());
 
                         count++;
@@ -112,92 +109,47 @@ public class Main extends AppCompatActivity {
         fos.flush();
         fos.close();
 
-        Log.e("GPME", "Playlist K" + listId + ": " + count);
+        Log.e("GPME", "Playlist " + listId + ": " + count);
     }
 
     private ArrayList<Song> parseSongs() throws Exception {
-        XmlPullParserFactory factory = XmlPullParserFactory.newInstance();
-        XmlPullParser parser = factory.newPullParser();
-
-        FileInputStream fis = new FileInputStream(new File(Environment.getExternalStorageDirectory(), "music.xml"));
-        parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false);
-        parser.setInput(fis, null);
-
+        File dbFile = new File(Environment.getExternalStorageDirectory(), "music.db");
+        SQLiteDatabase db = SQLiteDatabase.openOrCreateDatabase(dbFile, null);
         ArrayList<Song> songs = new ArrayList<>();
-        int eventType = parser.getEventType();
-        Song currentSong = null;
 
-        while (eventType != XmlPullParser.END_DOCUMENT) {
-            String tag;
-            switch (eventType) {
-                case XmlPullParser.START_TAG:
-                    tag = parser.getName();
+        Cursor c = db.query("MUSIC", new String[] {"Id", "Title", "Artist"}, null, null, null, null, null);
+        c.moveToFirst();
+        while (!c.isLast()) {
+            Song song = new Song();
+            song.mId = c.getString(c.getColumnIndex("Id"));
+            song.mTitle = c.getString(c.getColumnIndex("Title"));
+            song.mArtist = c.getString(c.getColumnIndex("Artist"));
+            songs.add(song);
 
-                    if (TextUtils.equals(tag, "row")) {
-                        currentSong = new Song();
-                    } else if (currentSong != null) {
-                        if (TextUtils.equals(tag, "Title")) {
-                            currentSong.mTitle = parser.nextText();
-                        } else if (TextUtils.equals(tag, "Artist")) {
-                            currentSong.mArtist = parser.nextText();
-                        } else if (TextUtils.equals(tag, "Id")) {
-                            currentSong.mId = parser.nextText();
-                        }
-                    }
-                    break;
-                case XmlPullParser.END_TAG:
-                    tag = parser.getName();
-                    if (TextUtils.equals(tag, "row") && currentSong != null){
-                        songs.add(currentSong);
-                    }
-            }
-
-            eventType = parser.next();
+            c.moveToNext();
         }
 
-        fis.close();
+        c.close();
         return songs;
     }
 
     private ArrayList<ListItem> parseListItems() throws Exception {
-        XmlPullParserFactory factory = XmlPullParserFactory.newInstance();
-        XmlPullParser parser = factory.newPullParser();
-
-        FileInputStream fis = new FileInputStream(new File(Environment.getExternalStorageDirectory(), "listitems.xml"));
-        parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false);
-        parser.setInput(fis, null);
-
+        File dbFile = new File(Environment.getExternalStorageDirectory(), "music.db");
+        SQLiteDatabase db = SQLiteDatabase.openOrCreateDatabase(dbFile, null);
         ArrayList<ListItem> items = new ArrayList<>();
-        int eventType = parser.getEventType();
-        ListItem currentItem = null;
 
-        while (eventType != XmlPullParser.END_DOCUMENT) {
-            String tag;
-            switch (eventType) {
-                case XmlPullParser.START_TAG:
-                    tag = parser.getName();
+        Cursor c = db.query("ListItems", new String[] {"MusicId", "ListId"}, null, null, null, null, null);
+        c.moveToFirst();
+        while (!c.isLast()) {
+            ListItem item = new ListItem();
+            item.mListId = c.getString(c.getColumnIndex("ListId"));
+            item.mSongId = c.getString(c.getColumnIndex("MusicId"));
+            items.add(item);
 
-                    if (TextUtils.equals(tag, "row")) {
-                        currentItem = new ListItem();
-                    } else if (currentItem != null) {
-                        if (TextUtils.equals(tag, "MusicId")) {
-                            currentItem.mSongId = parser.nextText();
-                        } else if (TextUtils.equals(tag, "ListId")) {
-                            currentItem.mListId = parser.nextText();
-                        }
-                    }
-                    break;
-                case XmlPullParser.END_TAG:
-                    tag = parser.getName();
-                    if (TextUtils.equals(tag, "row") && currentItem != null){
-                        items.add(currentItem);
-                    }
-            }
-
-            eventType = parser.next();
+            c.moveToNext();
         }
 
-        fis.close();
+        c.close();
         return items;
     }
 
